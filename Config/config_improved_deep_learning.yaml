@@ -1,0 +1,84 @@
+# Directory dove sono salvati i dati preprocessed (signals.csv/parquet e windows.csv/parquet)
+output_dir: "results" 
+
+# Tipo di preprocessing da utilizzare per il training
+preprocessing_type: "gravity"  # "standard" o "gravity" - cambia in base ai dati che vuoi usare
+                                 # standard: usa output_dir/standard_preprocessing/
+                                 # gravity: usa output_dir/gravity_preprocessing/
+
+# Seed per riproducibilità
+random_seed: 42
+
+# Validazione 
+use_cross_validation: true  # Abilita 5-fold CV 
+n_splits: 5  # Numero di fold per cross-validation
+validation_split: 0.2  # Se non usi CV
+random_state: 42
+
+# Training 
+epochs: 60  
+
+# Configurazione per la classificazione
+classification:
+  # Canali da utilizzare per il training
+  channels: ["mag_dom", "mag_non"]
+
+# Dimensione finestra fissa 
+window_size_seconds: 250  # secondi
+sampling_rate: 40  # Hz
+# Risultato: 250 * 40 = 10000 punti per finestra
+
+# Modelli da confrontare
+models:
+  - "cnn_1d"  
+  - "lstm"    
+
+# Random search approfondita per dataset grandi
+random_search:
+  n_trials: 50  # Aumentato per migliore esplorazione
+  n_jobs: 8  # Aumentato per parallelizzare più trial 
+  
+# Spazio iperparametri 
+param_space:
+  # Parametri comuni
+  learning_rate:
+    type: "log_uniform"
+    low: 0.0001    # Range ottimale basato sui risultati
+    high: 0.005   # Evita learning rate troppo aggressivi
+  dropout:
+    type: "choice" 
+    values: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5]
+  batch_size:
+    type: "choice"
+    values: [64, 96, 128, 256]
+  
+  # CNN 1D specifici
+  kernel_size:
+    type: "choice"
+    values: [3, 5, 7, 9]  # Assicurati che siano <= window_size
+  n_filters:
+    type: "choice"
+    values: [32, 64, 96, 128]
+  
+  # LSTM specifici  
+  lstm_units:
+    type: "choice"
+    values: [32, 64, 96, 128]
+
+# Canali da utilizzare (tutte e 6 le dimensioni)
+channels:
+  - "mag_dom"
+  - "mag_non"
+
+# Metriche principali per selezione modelli
+primary_metric: "f1_score"  # o "accuracy"
+
+# Output e salvataggio
+save_models: true
+save_detailed_results: true
+
+# Confronto 
+comparison:
+  enable_statistical_tests: true  # Test statistici sui risultati CV
+  generate_rankings: true         # Classifica modelli 
+  export_summary_table: true      # Tabella riassuntiva finale

@@ -1,5 +1,6 @@
 """
-Utility helpers: configuration loading, path management, logging, and seeding.
+File di utilità per la pipeline di elaborazione dei dati. Contiene funzioni per la gestione dei percorsi, il caricamento delle configurazioni,
+la configurazione del logging e l'impostazione del seed per la riproducibilità.
 """
 
 from __future__ import annotations

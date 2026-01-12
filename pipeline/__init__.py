@@ -1,10 +1,7 @@
 __all__ = [
     "preprocessing",
-    "features",
-    "train",
+    "deep_learning",
     "evaluate",
     "plotting",
     "utils",
 ]
-
-

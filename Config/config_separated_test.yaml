@@ -1,0 +1,37 @@
+# Configurazione per test del preprocessing separato AHA e WEEK con multiprocessing
+data_dir: "/data03/AInCPClinicalData/Dati_Actigraph_RAW/data" 
+
+metadata_file: "/data03/AInCPClinicalData/Dati_Actigraph_RAW/data/metadata2022_04.xlsx" 
+
+# Directory di output per i risultati del preprocessing separato
+output_dir: "results"
+
+# Parametri di preprocessing (identici per entrambi i dataset)
+window_size: 240 # Dimensione finestra 
+overlap: 0.5 # Sovrapposizione finestre
+sampling_rate: 80 # Frequenza di campionamento in Hz
+
+# Parametri per multiprocessing 
+n_workers: 16 # Numero di workers per multiprocessing 
+max_workers_load: 14 # Massimo numero di workers per caricamento file 
+max_workers_sync: 2 # Massimo numero di workers per sincronizzazione 
+
+decimation_factor: 2 # Factor di decimazione per ENTRAMBI AHA e WEEK (sampling rate 40 Hz)
+
+# Parametri per gravity removal (usati solo se --gravity è specificato)
+gravity_removal:
+  cutoff_hz: 0.3      # Frequenza di taglio per filtro passa-alto (Hz)
+  filter_order: 2     # Ordine del filtro Butterworth
+  columns:            # Colonne a cui applicare il filtro (null = tutte)
+    - "x_D"
+    - "y_D" 
+    - "z_D"
+    - "x_ND"
+    - "y_ND"
+    - "z_ND"
+
+random_seed: 42
+verbose: true 
+
+# Note:
+# - Per utilizzare gravity removal: python test_separated_preprocessing.py --config Config/config_separated_test.yaml --gravity
