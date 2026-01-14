@@ -1,7 +1,7 @@
 # Configurazione per test del preprocessing separato AHA e WEEK con multiprocessing
-data_dir: "/data03/AInCPClinicalData/Dati_Actigraph_RAW/data" 
+data_dir: "../dati_uniti" 
 
-metadata_file: "/data03/AInCPClinicalData/Dati_Actigraph_RAW/data/metadata2022_04.xlsx" 
+metadata_file: "../dati_uniti/metadata2023_08.xlsx" 
 
 # Directory di output per i risultati del preprocessing separato
 output_dir: "results"

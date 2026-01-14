@@ -2,7 +2,7 @@
 output_dir: "results" 
 
 # Tipo di preprocessing da utilizzare per il training
-preprocessing_type: "gravity"  # "standard" o "gravity" - cambia in base ai dati che vuoi usare
+preprocessing_type: "standard"  # "standard" o "gravity" - cambia in base ai dati che vuoi usare
                                  # standard: usa output_dir/standard_preprocessing/
                                  # gravity: usa output_dir/gravity_preprocessing/
 

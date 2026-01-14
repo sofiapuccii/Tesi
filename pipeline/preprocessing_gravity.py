@@ -45,7 +45,7 @@ def load_subject_metadata(metadata_file: Path) -> Tuple[Dict[int, int], Dict[int
 def _load_aha_file(file_path: Path, subject_labels: Dict[int, int], subject_aha_scores: Dict[int, float]) -> Optional[pd.DataFrame]:
     """Load and process di un singolo file AHA."""
     try:
-        df = pd.read_csv(file_path)
+        df = pd.read_csv(file_path, decimal=',')
         
         # estare l'id del paziente
         import re
@@ -70,7 +70,7 @@ def _load_aha_file(file_path: Path, subject_labels: Dict[int, int], subject_aha_
 def _load_week_file(file_path: Path) -> Optional[pd.DataFrame]:
     """Load and process a single WEEK CSV file."""
     try:
-        df = pd.read_csv(file_path)
+        df = pd.read_csv(file_path, decimal=',')
         
         import re
         match = re.search(r'(\d+)_week_RAW\.csv', file_path.name) # estraiamo l'id del paziente dal filename
@@ -235,7 +235,7 @@ def decimate_signals(df: pd.DataFrame, decimation_factor: int = 2, data_type: st
                 decimated_df[col] = group[col].iloc[0] # preserva il valore costante per il soggetto
         
         # Mantieni solo i timestamp decimati corrispondenti ai campioni
-        decimated_df["timestamp"] = group["timestamp"].iloc[::decimation_factor][:new_length]
+        decimated_df["timestamp"] = group["timestamp"].iloc[::decimation_factor][:new_length].values 
         
         result_frames.append(decimated_df)
     

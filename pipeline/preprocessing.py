@@ -39,7 +39,7 @@ def load_subject_metadata(metadata_file: Path) -> Tuple[Dict[int, int], Dict[int
 def _load_aha_file(file_path: Path, subject_labels: Dict[int, int], subject_aha_scores: Dict[int, float]) -> Optional[pd.DataFrame]:
     """Load and process di un singolo file AHA."""
     try:
-        df = pd.read_csv(file_path)
+        df = pd.read_csv(file_path, decimal=',')
         
         # estare l'id del paziente
         import re
@@ -64,7 +64,7 @@ def _load_aha_file(file_path: Path, subject_labels: Dict[int, int], subject_aha_
 def _load_week_file(file_path: Path) -> Optional[pd.DataFrame]:
     """Load and process a single WEEK CSV file."""
     try:
-        df = pd.read_csv(file_path)
+        df = pd.read_csv(file_path, decimal=',')
         
         import re
         match = re.search(r'(\d+)_week_RAW\.csv', file_path.name) # estraiamo l'id del paziente dal filename
@@ -211,7 +211,7 @@ def calculate_magnitude(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def decimate_signals(df: pd.DataFrame, decimation_factor: int = 2, data_type: str = "UNKNOWN") -> pd.DataFrame:
-    """Decima i segnali di un DataFrame (AHA o WEEK)."""
+    """Decima i segnali di un DataFrame (AHA o WEEK) usando vettorizzazione."""
     result_frames = []
     
     # Processa ogni soggetto separatamente
@@ -224,18 +224,22 @@ def decimate_signals(df: pd.DataFrame, decimation_factor: int = 2, data_type: st
         
         # Identifica le colonne dei segnali da decimare
         signal_cols = ["x_D", "y_D", "z_D", "x_ND", "y_ND", "z_ND"]
-        if "mag_dom" in group.columns:
-            signal_cols.extend(["mag_dom", "mag_non"])
+        available_signal_cols = [col for col in signal_cols if col in group.columns]
         
-        decimated_data = {}
-        for col in signal_cols:
-            if col in group.columns:
-                signal = group[col].to_numpy(dtype=float)
-                decimated_data[col] = decimate(signal, decimation_factor, ftype='iir', zero_phase=True)
+        if not available_signal_cols:
+            result_frames.append(group)
+            continue
         
-        # Crea un nuovo DataFrame con i segnali decimati
-        new_length = len(list(decimated_data.values())[0]) if decimated_data else len(group) // decimation_factor
-        decimated_df = pd.DataFrame(decimated_data)
+        # VETTORIZZAZIONE: Converte tutte le colonne dei segnali in un array NumPy 2D
+        # Shape: (n_samples, n_channels)
+        signals_matrix = group[available_signal_cols].to_numpy(dtype=float)
+        
+        # Applica decimate una volta sola su tutti i canali contemporaneamente (axis=0)
+        decimated_matrix = decimate(signals_matrix, decimation_factor, ftype='iir', zero_phase=True, axis=0)
+        
+        # Converti il risultato decimato in un DataFrame
+        decimated_data = pd.DataFrame(decimated_matrix, columns=available_signal_cols)
+        new_length = decimated_matrix.shape[0]
 
         # Colonne di metadata da preservare (di base)
         metadata_cols = ["subject_id", "session_type"]
@@ -247,12 +251,12 @@ def decimate_signals(df: pd.DataFrame, decimation_factor: int = 2, data_type: st
         
         for col in metadata_cols:
             if col in group.columns:
-                decimated_df[col] = group[col].iloc[0] # preserva il valore costante per il soggetto
+                decimated_data[col] = group[col].iloc[0] # preserva il valore costante per il soggetto
         
         # Mantieni solo i timestamp decimati corrispondenti ai campioni
-        decimated_df["timestamp"] = group["timestamp"].iloc[::decimation_factor][:new_length]
+        decimated_data["timestamp"] = group["timestamp"].iloc[::decimation_factor][:new_length].values
         
-        result_frames.append(decimated_df) # aggiungi il DataFrame decimato alla lista
+        result_frames.append(decimated_data) # aggiungi il DataFrame decimato alla lista
     
     result = pd.concat(result_frames, ignore_index=True) # concatena tutti i DataFrame decimati
     return result

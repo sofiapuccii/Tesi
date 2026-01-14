@@ -4,10 +4,9 @@ pandas
 scikit-learn
 scikeras
 matplotlib
+seaborn
 PyYAML
 joblib
-xgboost
-optuna
 pyarrow
 openpyxl
 tensorflow>=2.10

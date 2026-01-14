@@ -32,10 +32,10 @@ sns.set_palette("husl")
 
 def load_regression_dataset(dataset_path: Path) -> pd.DataFrame:
     """Carica il dataset di regressione."""
-    if not dataset_path.exists():
+    if not dataset_path.exists(): 
         raise FileNotFoundError(f"Dataset non trovato: {dataset_path}")
     
-    data = pd.read_csv(dataset_path)
+    data = pd.read_csv(dataset_path) 
     required_columns = ["subject_id", "st_percentage_week", "true_aha_score"]
     
     missing_columns = [col for col in required_columns if col not in data.columns]
@@ -54,7 +54,7 @@ def load_regression_dataset(dataset_path: Path) -> pd.DataFrame:
 
 def perform_kfold_regression(X: np.ndarray, y: np.ndarray, k_folds: int = 5, 
                            random_state: int = 42) -> Tuple[List[float], List[float], List[float], 
-                                                           List[np.ndarray], List[np.ndarray]]:
+                                                           List[np.ndarray], List[np.ndarray], List[np.ndarray]]:
     """
     Esegue K-fold Cross-Validation per regressione lineare.
     
@@ -64,6 +64,7 @@ def perform_kfold_regression(X: np.ndarray, y: np.ndarray, k_folds: int = 5,
         mae_scores: Lista MAE per ogni fold
         all_predictions: Lista predizioni per ogni fold
         all_actuals: Lista valori reali per ogni fold
+        all_test_indices: Lista indici di test per ogni fold
     """
     
     kfold = KFold(n_splits=k_folds, shuffle=True, random_state=random_state)
@@ -73,6 +74,7 @@ def perform_kfold_regression(X: np.ndarray, y: np.ndarray, k_folds: int = 5,
     mae_scores = []
     all_predictions = []
     all_actuals = []
+    all_test_indices = []
     
     print(f"\n=== K-FOLD CROSS-VALIDATION (k={k_folds}) ===")
     
@@ -85,7 +87,7 @@ def perform_kfold_regression(X: np.ndarray, y: np.ndarray, k_folds: int = 5,
         model = LinearRegression()
         model.fit(X_train.reshape(-1, 1), y_train)
         
-        # Predizioni sul test set
+        # Predizioni sul test set = DAB (Daily AHA Biomarker)
         y_pred = model.predict(X_test.reshape(-1, 1))
         
         # Calcolo metriche
@@ -99,11 +101,12 @@ def perform_kfold_regression(X: np.ndarray, y: np.ndarray, k_folds: int = 5,
         mae_scores.append(mae)
         all_predictions.extend(y_pred)
         all_actuals.extend(y_test)
+        all_test_indices.extend(test_idx)
         
         print(f"Fold {fold_idx:2d}: r={correlation:+.4f} (p={p_value:.4f}), "
               f"R²={r2:+.4f}, MAE={mae:.4f}")
     
-    return correlations, r2_scores, mae_scores, all_predictions, all_actuals
+    return correlations, r2_scores, mae_scores, all_predictions, all_actuals, all_test_indices
 
 
 def print_statistical_summary(correlations: List[float], r2_scores: List[float], 
@@ -211,7 +214,7 @@ def run_regression_analysis(dataset_path: Path, output_dir: Path, k_folds: int =
     print(f"Samples: {len(X)}")
     
     # 3. K-fold Cross-Validation
-    correlations, r2_scores, mae_scores, all_predictions, all_actuals = perform_kfold_regression(
+    correlations, r2_scores, mae_scores, all_predictions, all_actuals, all_test_indices = perform_kfold_regression(
         X, y, k_folds=k_folds
     )
     
@@ -234,4 +237,15 @@ def run_regression_analysis(dataset_path: Path, output_dir: Path, k_folds: int =
     results.to_csv(results_path, index=False)
     print(f"Risultati numerici salvati: {results_path}")
     
-    print(f"\n✅ Analisi completata. Output in: {output_dir}")
+    # 7. Salva predizioni individuali con subject_id
+    predictions_df = pd.DataFrame({
+        'subject_id': data.iloc[all_test_indices]['subject_id'].values,
+        'true_aha_score': all_actuals,
+        'predicted_aha_score': all_predictions
+    })
+    
+    predictions_path = output_dir / "individual_predictions.csv"
+    predictions_df.to_csv(predictions_path, index=False)
+    print(f"Predizioni individuali salvate: {predictions_path}")
+    
+    print(f"\n Analisi completata. Output in: {output_dir}")

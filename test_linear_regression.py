@@ -10,9 +10,7 @@ import os
 
 # Aggiungi la directory pipeline al path
 sys.path.insert(0, str(Path(__file__).parent / "pipeline"))
-
 from linear_regression_analysis import run_regression_analysis
-
 
 def main():
     
