@@ -21,7 +21,7 @@ epochs: 60
 # Configurazione per la classificazione
 classification:
   # Canali da utilizzare per il training
-  channels: ["mag_dom", "mag_non"]
+  channels: ["x_D", "y_D", "z_D", "x_ND", "y_ND", "z_ND"]
 
 # Dimensione finestra fissa 
 window_size_seconds: 250  # secondi
@@ -65,10 +65,14 @@ param_space:
     type: "choice"
     values: [32, 64, 96, 128]
 
-# Canali da utilizzare (tutte e 6 le dimensioni)
+# Canali da utilizzare (tutte e 6 le dimensioni triassiali)
 channels:
-  - "mag_dom"
-  - "mag_non"
+  - "x_D"
+  - "y_D" 
+  - "z_D"
+  - "x_ND"
+  - "y_ND"
+  - "z_ND"
 
 # Metriche principali per selezione modelli
 primary_metric: "f1_score"  # o "accuracy"
