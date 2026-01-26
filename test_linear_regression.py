@@ -15,7 +15,7 @@ from linear_regression_analysis import run_regression_analysis
 def main():
     
     base_dir = Path(__file__).parent
-    dataset_path = base_dir / "results" / "clinical_analysis" / "regression_dataset.csv"
+    dataset_path = base_dir / "results" / "clinical_analysis_v2" / "regression_dataset.csv"
     output_dir = base_dir / "results" / "regression_analysis"
     
     print("=== TEST LINEAR REGRESSION ANALYSIS ===")

@@ -1,226 +1,173 @@
 """
-Visualizzazione temporale del Daily AHA Biomarker (DAB) per singoli soggetti.
+Visualizzazione temporale del Daily AHA Biomarker (DAB) con Smoothing.
 
-Genera grafici temporali che mostrano:
-1. Linea tratteggiata orizzontale: AHA Score clinico reale
-2. Linea continua: DAB calcolato nel tempo da dati accelerometrici
-
-Input: Dati temporali con ST% e AHA score per singoli soggetti
-Output: Grafico temporale DAB vs tempo con riferimento AHA
+Workflow:
+1. Carica i dati grezzi (is_st: 0/1) generati da clinical_analysis.py
+2. Applica una media mobile (Rolling Window 6h) per ottenere l'ST% locale
+3. Applica la formula di regressione (Slope/Intercept) per stimare il DAB
+4. Plotta il risultato confrontandolo con l'AHA Reale.
 """
 
 from __future__ import annotations
 from pathlib import Path
+
 from typing import Optional, List
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+
 import matplotlib.dates as mdates
 from datetime import datetime, timedelta
+
+# INCOLLA VALORI OTTENUTI DA linear_regression_analysis.py
+REGRESSION_SLOPE = 9.93025     
+REGRESSION_INTERCEPT = -273.81723  
 
 # Stile dei grafici
 plt.style.use('default')
 plt.rcParams['figure.figsize'] = (15, 6)
 plt.rcParams['font.size'] = 12
 
-
-def load_temporal_data(data_path: Path, subject_id: str) -> pd.DataFrame:
+def load_temporal_data(data_path: Path) -> pd.DataFrame:
     """
-    Carica i dati temporali per un singolo soggetto.
-    
-    Expected CSV format:
-    - subject_id: ID soggetto
-    - timestamp: Timestamp dei dati
-    - st_percentage: ST% calcolato per quella finestra temporale
-    - true_aha_score: AHA score clinico reale
+    Carica il dataset completo delle predizioni temporali.
+    Format atteso: subject_id, timestamp, is_st, true_aha_score
     """
-    
     if not data_path.exists():
         raise FileNotFoundError(f"File dati non trovato: {data_path}")
     
-    data = pd.read_csv(data_path)
+    # Carica CSV
+    df = pd.read_csv(data_path)
     
-    # Filtra per soggetto specifico
-    subject_data = data[data['subject_id'] == subject_id].copy()
-    
-    if subject_data.empty:
-        raise ValueError(f"Nessun dato trovato per soggetto: {subject_id}")
-    
-    # Converti timestamp
-    if 'timestamp' in subject_data.columns:
-        subject_data['timestamp'] = pd.to_datetime(subject_data['timestamp'])
-        subject_data = subject_data.sort_values('timestamp')
+    # Converti timestamp in datetime
+    if 'timestamp' in df.columns:
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
     else:
-        # Se non c'è timestamp, crea uno fittizio
-        subject_data = subject_data.reset_index(drop=True)
-        subject_data['timestamp'] = pd.date_range('2024-01-01', 
-                                                 periods=len(subject_data), 
-                                                 freq='H')
+        raise ValueError("Il file CSV deve contenere una colonna 'timestamp'")
+        
+    print(f"Dataset caricato: {len(df)} righe totali.")
+    return df
+
+def process_subject_dab(subject_df: pd.DataFrame, slope: float, intercept: float, window: str = '6h') -> pd.DataFrame:
+    """
+    Calcola il DAB 'smooth' usando una media mobile temporale.
+    """
+    # Ordina per tempo e imposta indice per il rolling
+    df = subject_df.sort_values('timestamp').set_index('timestamp')
     
-    print(f"Dati caricati per soggetto {subject_id}: {len(subject_data)} punti temporali")
-    print(f"Range temporale: {subject_data['timestamp'].min()} - {subject_data['timestamp'].max()}")
+    # 1. Calcolo ST% Locale (Rolling Mean)
+    # Calcola la media di 'is_st' (0 o 1) nella finestra temporale
+    # Moltiplichiamo per 100 per avere la percentuale (0-100)
+    # min_periods=10: serve almeno qualche dato per disegnare la linea
+    df['rolling_st_percent'] = df['is_st'].rolling(window, min_periods=10).mean() * 100
     
-    return subject_data
+    # 2. Applicazione Formula Regressione
+    # DAB = (ST% * slope) + intercept
+    df['dab_smooth'] = (df['rolling_st_percent'] * slope) + intercept
+    
+    # 3. Clip dei valori (non possono uscire dal range 0-100)
+    df['dab_smooth'] = df['dab_smooth'].clip(0, 100)
+    
+    return df
 
 
-def calculate_dab_temporal(subject_data: pd.DataFrame, slope: float, intercept: float) -> pd.DataFrame:
+def plot_dab_temporal(processed_df: pd.DataFrame, subject_id: str, 
+                      true_aha: float, output_path: Path) -> None:
     """
-    Calcola DAB per ogni punto temporale usando i coefficienti del modello già addestrato.
-    Formula: DAB = slope * ST% + intercept
+    Crea grafico temporale DAB vs tempo per una settimana.
     """
+    # Calcola la durata totale dei dati
+    time_span = processed_df.index.max() - processed_df.index.min()
+    days_span = time_span.total_seconds() / (24 * 3600)
     
-    # Calcola DAB usando ST% temporale
-    st_values = subject_data['st_percentage'].values
-    dab_values = slope * st_values + intercept
-    
-    # Aggiungi DAB ai dati
-    result_data = subject_data.copy()
-    result_data['dab_predicted'] = dab_values
-    
-    return result_data
-
-
-def plot_dab_temporal(temporal_data: pd.DataFrame, subject_id: str, 
-                      output_path: Path, window_hours: Optional[int] = None) -> None:
-    """
-    Crea grafico temporale DAB vs tempo con linea di riferimento AHA.
-    """
-    
-    # Seleziona finestra temporale se specificata
-    if window_hours:
-        start_time = temporal_data['timestamp'].min()
-        end_time = start_time + timedelta(hours=window_hours)
-        plot_data = temporal_data[
-            (temporal_data['timestamp'] >= start_time) & 
-            (temporal_data['timestamp'] <= end_time)
-        ].copy()
-        title_suffix = f" ({window_hours}h window)"
-    else:
-        plot_data = temporal_data.copy()
-        title_suffix = ""
-    
-    # Ottieni AHA score reale (dovrebbe essere costante per il soggetto)
-    true_aha = plot_data['true_aha_score'].iloc[0]
-    
-    # Crea figura
     fig, ax = plt.subplots(figsize=(15, 6))
     
-    # Plot DAB temporale (linea continua arancione)
-    ax.plot(plot_data['timestamp'], plot_data['dab_predicted'], 
-            color='orange', linewidth=2, alpha=0.9, label='DAB (Predicted)')
+    ax.plot(processed_df.index, processed_df['dab_smooth'], 
+            color='forestgreen', linewidth=2.5, alpha=0.9, label='Estimated Daily AHA (DAB)')
     
-    # Linea tratteggiata AHA reale (blu)
-    ax.axhline(y=true_aha, color='blue', linestyle='--', linewidth=2, 
-               alpha=0.8, label=f'AHA (True Score: {true_aha:.1f})')
+    # 2. Linea di Riferimento AHA Reale (Blu Tratteggiato)
+    ax.axhline(y=true_aha, color='royalblue', linestyle='--', linewidth=2, 
+               alpha=0.8, label=f'True Clinical AHA ({true_aha:.0f})')
     
-    # Personalizzazione assi
-    ax.set_xlabel('Orario', fontsize=12, fontweight='bold')
-    ax.set_ylabel('Home-AHA', fontsize=12, fontweight='bold')
-    ax.set_title(f'Daily AHA Biomarker - Subject {subject_id}{title_suffix}', 
-                fontsize=14, fontweight='bold', pad=20)
+    # Personalizzazione
+    ax.set_title(f'Daily AHA Biomarker {subject_id}', 
+                 fontsize=14, fontweight='bold', pad=15)
+    ax.set_ylabel('DAB', fontsize=12, fontweight='bold')
+    ax.set_xlabel('Orario', fontsize=12)
+    ax.set_ylim(0, 105) # Un po' di margine sopra il 100
     
-    # Limiti Y
-    ax.set_ylim(0, 100)
-    
-    # Formattazione tempo
-    if window_hours and window_hours <= 24:
+    # Formattazione Asse X per replicare il formato della figura 4.7
+    if days_span > 3:  # Se abbiamo più di 3 giorni (settimana), usa formato con orari ripetuti
+        # Major ticks ogni giorno alle 00:00
+        ax.xaxis.set_major_locator(mdates.DayLocator())
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))  # Mostra solo l'orario (00:00)
+        # Minor ticks ogni 12 ore per segnare anche il mezzogiorno
+        ax.xaxis.set_minor_locator(mdates.HourLocator(byhour=[12]))
+        # Aggiungi linee verticali sottili per separare i giorni
+        for day in pd.date_range(start=processed_df.index.min().floor('D'), 
+                                end=processed_df.index.max().ceil('D'), freq='D'):
+            ax.axvline(x=day, color='gray', linestyle='-', alpha=0.2, linewidth=0.8)
+    else:  # Per periodi più brevi, usa formato orario standard
         ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
         ax.xaxis.set_major_locator(mdates.HourLocator(interval=4))
-    else:
-        ax.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d %H:%M'))
-        ax.xaxis.set_major_locator(mdates.DayLocator(interval=1))
     
-    plt.setp(ax.xaxis.get_majorticklabels(), rotation=45)
+    ax.grid(True, which='major', alpha=0.3)
+    ax.grid(True, which='minor', alpha=0.15)
     
-    # Griglia e legenda
-    ax.grid(True, alpha=0.3)
-    ax.legend(loc='upper right', fontsize=11)
-    
-    # Statistiche nel grafico
-    dab_mean = plot_data['dab_predicted'].mean()
-    dab_std = plot_data['dab_predicted'].std()
-    
-    stats_text = (f'DAB Statistics:\n'
-                 f'Mean: {dab_mean:.2f}\n'
-                 f'Std: {dab_std:.2f}\n'
-                 f'True AHA: {true_aha:.1f}')
+    # Statistiche nel box
+    avg_dab = processed_df['dab_smooth'].mean()
+    stats_text = (f'Mean Estimated AHA: {avg_dab:.1f}\n'
+                  f'True Clinical AHA: {true_aha:.1f}\n'
+                  f'Error: {avg_dab - true_aha:.1f}\n'
+                  f'Data span: {days_span:.1f} days')
     
     ax.text(0.02, 0.95, stats_text, transform=ax.transAxes, fontsize=10,
             verticalalignment='top', 
-            bbox=dict(boxstyle='round', facecolor='lightgray', alpha=0.8))
+            bbox=dict(boxstyle='round', facecolor='white', alpha=0.9, edgecolor='gray'))
     
-    # Salva grafico
+    ax.legend(loc='upper right')
+    
+    # Salva
     output_path.parent.mkdir(parents=True, exist_ok=True)
     plt.tight_layout()
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    print(f"Grafico temporale salvato: {output_path}")
-    
-    plt.show()
-
-
-def plot_multiple_subjects_dab(data_path: Path, subject_ids: List[str], 
-                               slope: float, intercept: float, output_dir: Path,
-                               window_hours: Optional[int] = 24) -> None:
-    """
-    Genera grafici temporali DAB per multipli soggetti usando coefficienti già calcolati.
-    """
-    
-    print(f"Generazione grafici temporali per {len(subject_ids)} soggetti...")
-    print(f"Usando modello: DAB = {slope:.4f} * ST% + {intercept:.4f}")
-    
-    for subject_id in subject_ids:
-        try:
-            # Carica dati soggetto
-            subject_data = load_temporal_data(data_path, subject_id)
-            
-            # Calcola DAB temporale
-            temporal_dab = calculate_dab_temporal(subject_data, slope, intercept)
-            
-            # Genera grafico
-            output_path = output_dir / f"dab_temporal_{subject_id}.png"
-            plot_dab_temporal(temporal_dab, subject_id, output_path, window_hours)
-            
-        except Exception as e:
-            print(f"Errore nel processare soggetto {subject_id}: {e}")
-            continue
-    
-    print("Generazione grafici completata!")
-
+    plt.close() # Chiude per liberare memoria
+    print(f"   -> Grafico salvato: {output_path}")
 
 def main():
-    """
-    Esempio di utilizzo per generare grafici temporali DAB.
-    Usa coefficienti già calcolati dalla regressione lineare.
-    """
+
+    base_dir = Path("results") 
+    input_file = base_dir / "clinical_analysis_v2" / "temporal_predictions.csv"
+    output_dir = base_dir / "dab_plots"
     
-    # Percorsi file
-    base_dir = Path("c:/Users/sofia/Desktop/TESI2")
-    temporal_data_path = base_dir / "temporal_data.csv"  # File con dati temporali
-    output_dir = base_dir / "Plots" / "DAB_Temporal"
-    
-    # Lista soggetti da analizzare
-    subject_ids = ["HC001", "HP001", "HC002", "HP002"]  # Esempio
-    
-    # Coefficienti dal modello già addestrato in linear_regression_analysis.py
-    # Esempio: DAB = 0.8456 * ST% + 12.3456
-    slope = 0.8456      # Sostituire con il valore reale dal tuo modello
-    intercept = 12.3456 # Sostituire con il valore reale dal tuo modello
+    print(f"Caricamento dati da: {input_file}")
     
     try:
-        # Genera grafici per tutti i soggetti
-        plot_multiple_subjects_dab(
-            temporal_data_path, 
-            subject_ids, 
-            slope,
-            intercept, 
-            output_dir,
-            window_hours=24  # Finestra 24 ore
-        )
+        # 1. Carica tutti i dati
+        full_df = load_temporal_data(input_file)
         
+        # 2. Trova lista soggetti unici
+        unique_subjects = full_df['subject_id'].unique()
+        print(f"Trovati {len(unique_subjects)} soggetti da analizzare.")
+        
+        # 3. Ciclo su ogni soggetto
+        for subject_id in unique_subjects:
+            # Estrai dati solo per questo soggetto
+            sub_df = full_df[full_df['subject_id'] == subject_id].copy()
+                
+            true_aha = sub_df['true_aha_score'].iloc[0]
+            
+            # Elabora (Rolling Mean + Regressione)
+            processed_df = process_subject_dab(sub_df, REGRESSION_SLOPE, REGRESSION_INTERCEPT)
+            
+            out_path = output_dir / f"dab_profile_{subject_id}.png"
+            plot_dab_temporal(processed_df, subject_id, true_aha, out_path)
+            
+        print("\nTutti i grafici sono stati generati correttamente.")
+            
     except Exception as e:
-        print(f"Errore: {e}")
-
+        print(f"\nERRORE: {e}")
 
 if __name__ == "__main__":
     main()

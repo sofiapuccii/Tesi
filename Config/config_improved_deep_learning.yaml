@@ -3,8 +3,8 @@ output_dir: "results"
 
 # Tipo di preprocessing da utilizzare per il training
 preprocessing_type: "standard"  # "standard" o "gravity" - cambia in base ai dati che vuoi usare
-                                 # standard: usa output_dir/standard_preprocessing/
-                                 # gravity: usa output_dir/gravity_preprocessing/
+                               # standard: usa output_dir/standard_preprocessing/
+                               # gravity: usa output_dir/gravity_preprocessing/
 
 # Seed per riproducibilità
 random_seed: 42
@@ -24,9 +24,9 @@ classification:
   channels: ["x_D", "y_D", "z_D", "x_ND", "y_ND", "z_ND"]
 
 # Dimensione finestra fissa 
-window_size_seconds: 250  # secondi
+window_size_seconds: 240  # secondi
 sampling_rate: 40  # Hz
-# Risultato: 250 * 40 = 10000 punti per finestra
+# Risultato: 240 * 40 = 9600 punti per finestra
 
 # Modelli da confrontare
 models:
@@ -50,7 +50,7 @@ param_space:
     values: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5]
   batch_size:
     type: "choice"
-    values: [64, 96, 128, 256]
+    values: [32, 64,96, 128, 256]
   
   # CNN 1D specifici
   kernel_size:
@@ -75,7 +75,7 @@ channels:
   - "z_ND"
 
 # Metriche principali per selezione modelli
-primary_metric: "f1_score"  # o "accuracy"
+primary_metric: "f1_score"  
 
 # Output e salvataggio
 save_models: true

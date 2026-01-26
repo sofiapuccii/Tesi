@@ -37,7 +37,7 @@ def main():
     # Estrai parametri
     models_dir = Path(config.get('models_dir', 'results/deep_learning_results_gravity/models'))
     data_dir = Path(config.get('data_dir', 'results/gravity_preprocessing'))
-    metadata_path = Path(config.get('metadata_path', '/data03/AInCPClinicalData/Dati_Actigraph_RAW/data/metadata2022_04.xlsx'))
+    metadata_path = Path(config.get('metadata_path', '../dati_uniti/metadata2023_08.xlsx'))
     output_dir = Path(config.get('output_dir', 'results/clinical_analysis'))
     
     print(f"Models dir: {models_dir}")

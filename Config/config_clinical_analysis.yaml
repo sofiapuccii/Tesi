@@ -8,7 +8,7 @@ models_dir: "results/deep_learning_results_gravity/models"
 data_dir: "results/gravity_preprocessing"
 
 # Path al file Excel con AHA scores clinici
-metadata_path: "/data03/AInCPClinicalData/Dati_Actigraph_RAW/data/metadata2022_04.xlsx"
+metadata_path: "../dati_uniti/metadata2023_08.xlsx"
 
 # Directory output per risultati (dove salvare regression_dataset.csv)
-output_dir: "results/clinical_analysis"
+output_dir: "results/clinical_analysis_v2"

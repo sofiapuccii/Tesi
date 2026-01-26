@@ -4,12 +4,7 @@ Analisi di Regressione Lineare per predire AHA Score da ST% (Daily AHA Biomarker
 Input: regression_dataset.csv con colonne [subject_id, st_percentage_week, true_aha_score]
 Output: Analisi completa con K-fold Cross-Validation, metriche dettagliate e visualizzazioni.
 
-Workflow:
-1. Carica dataset CSV
-2. K-fold Cross-Validation
-3. Per ogni fold: calcola Pearson r, R², MAE
-4. Report statistiche complete
-5. Scatter plot Predicted vs Actual
+FIXED: Risolto bug "positional indexers are out-of-bounds"
 """
 
 from __future__ import annotations
@@ -21,7 +16,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.linear_model import LinearRegression
-from sklearn.model_selection import KFold
 from sklearn.metrics import mean_absolute_error, r2_score
 from scipy.stats import pearsonr
 
@@ -52,63 +46,76 @@ def load_regression_dataset(dataset_path: Path) -> pd.DataFrame:
     return data_clean
 
 
-def perform_kfold_regression(X: np.ndarray, y: np.ndarray, k_folds: int = 5, 
-                           random_state: int = 42) -> Tuple[List[float], List[float], List[float], 
-                                                           List[np.ndarray], List[np.ndarray], List[np.ndarray]]:
+def perform_groupkfold_regression(X: np.ndarray, y: np.ndarray, groups: np.ndarray, 
+                                  subject_ids: np.ndarray, k_folds: int = 5) -> Tuple:
     """
-    Esegue K-fold Cross-Validation per regressione lineare.
+    Esegue GroupKFold Cross-Validation per regressione lineare, raggruppando per soggetto.
+    
+    FIXED: Ora traccia subject_id invece di indici posizionali
     
     Returns:
         correlations: Lista coefficienti di correlazione di Pearson per ogni fold
         r2_scores: Lista R² per ogni fold  
         mae_scores: Lista MAE per ogni fold
+        slopes: Lista slope per ogni fold
+        intercepts: Lista intercept per ogni fold
         all_predictions: Lista predizioni per ogni fold
         all_actuals: Lista valori reali per ogni fold
-        all_test_indices: Lista indici di test per ogni fold
+        all_subject_ids: Lista subject_id per ogni predizione
     """
-    
-    kfold = KFold(n_splits=k_folds, shuffle=True, random_state=random_state)
-    
+    from sklearn.model_selection import GroupKFold
+    group_kfold = GroupKFold(n_splits=k_folds)
+
     correlations = []
     r2_scores = []
     mae_scores = []
+    slopes = []
+    intercepts = []
     all_predictions = []
     all_actuals = []
-    all_test_indices = []
-    
-    print(f"\n=== K-FOLD CROSS-VALIDATION (k={k_folds}) ===")
-    
-    for fold_idx, (train_idx, test_idx) in enumerate(kfold.split(X), 1):
-        # Divisione train/test per questo fold
+    all_subject_ids = []  # ✅ NUOVO: traccia subject_id invece di indici
+
+    print(f"\n=== GROUP K-FOLD CROSS-VALIDATION (k={k_folds}) ===")
+
+    for fold_idx, (train_idx, test_idx) in enumerate(group_kfold.split(X, y, groups), 1):
         X_train, X_test = X[train_idx], X[test_idx]
         y_train, y_test = y[train_idx], y[test_idx]
         
-        # Training del modello di regressione lineare
+        # Estrai subject_id del test set
+        test_subject_ids = subject_ids[test_idx]
+        
+        # Addestra modello
         model = LinearRegression()
         model.fit(X_train.reshape(-1, 1), y_train)
-        
-        # Predizioni sul test set = DAB (Daily AHA Biomarker)
+
+        slopes.append(model.coef_[0])
+        intercepts.append(model.intercept_)
+
+        # Predizioni
         y_pred = model.predict(X_test.reshape(-1, 1))
-        
-        # Calcolo metriche
+
+        # Metriche
         correlation, p_value = pearsonr(y_test, y_pred)
         r2 = r2_score(y_test, y_pred)
         mae = mean_absolute_error(y_test, y_pred)
         
-        # Salva risultati
         correlations.append(correlation)
         r2_scores.append(r2)
         mae_scores.append(mae)
+        
+        # Salva predizioni + metadata
         all_predictions.extend(y_pred)
         all_actuals.extend(y_test)
-        all_test_indices.extend(test_idx)
+        all_subject_ids.extend(test_subject_ids)  # ✅ NUOVO: traccia subject_id
         
         print(f"Fold {fold_idx:2d}: r={correlation:+.4f} (p={p_value:.4f}), "
-              f"R²={r2:+.4f}, MAE={mae:.4f}")
+              f"R²={r2:+.4f}, MAE={mae:.4f}, "
+              f"Slope={model.coef_[0]:+.4f}, Intercept={model.intercept_:+.4f}")
     
-    return correlations, r2_scores, mae_scores, all_predictions, all_actuals, all_test_indices
-
-
+    return (correlations, r2_scores, mae_scores, slopes, intercepts, 
+            all_predictions, all_actuals, all_subject_ids)
+    
+  
 def print_statistical_summary(correlations: List[float], r2_scores: List[float], 
                             mae_scores: List[float]) -> None:
     """Stampa il riepilogo statistico completo."""
@@ -141,60 +148,68 @@ def print_statistical_summary(correlations: List[float], r2_scores: List[float],
 
 
 def create_scatter_plot(predictions: List[float], actuals: List[float], 
+                       subject_ids: List[int], metadata_df: pd.DataFrame,
                        output_path: Path) -> None:
     """
-    Crea scatter plot Predicted vs Actual con linea identità e regressione.
+    Crea scatter plot Predicted vs Actual con colorazione MACS.
+    
+    FIXED: Usa subject_ids per fare il match con metadata
     """
     
     fig, ax = plt.subplots(figsize=(10, 8))
+
+    # Palette MACS
+    palette = {0: 'forestgreen', 1: 'gold', 2: 'orange', 3: 'red'}
+    labels = {0: 'MACS 0', 1: 'MACS 1', 2: 'MACS 2', 3: 'MACS 3'}
+
+    # ✅ NUOVO: Match subject_id con MACS usando DataFrame
+    macs_values = []
+    for sid in subject_ids:
+        # Cerca MACS per questo subject_id
+        match = metadata_df[metadata_df['subject'] == sid]
+        if not match.empty and 'MACS' in match.columns:
+            macs_values.append(match.iloc[0]['MACS'])
+        else:
+            macs_values.append(np.nan)
     
-    # Scatter plot
-    ax.scatter(actuals, predictions, alpha=0.7, s=60, color='steelblue', 
-               edgecolors='darkblue', linewidth=0.5, label='Data Points')
-    
-    # Calcola range per le linee
-    min_val = min(min(actuals), min(predictions))
-    max_val = max(max(actuals), max(predictions))
-    range_vals = np.linspace(min_val, max_val, 100)
-    
-    # Linea identità y=x (perfetta predizione)
-    ax.plot(range_vals, range_vals, '--', color='red', linewidth=2, 
-            alpha=0.8, label='Perfect Prediction (y=x)')
-    
-    # Linea di regressione
-    z = np.polyfit(actuals, predictions, 1)
-    p = np.poly1d(z)
-    ax.plot(range_vals, p(range_vals), '-', color='orange', linewidth=2, 
-            alpha=0.8, label=f'Regression Line (y={z[0]:.3f}x+{z[1]:+.3f})')
-    
-    # Calcola metriche globali
-    global_r, global_p = pearsonr(actuals, predictions)
-    global_r2 = r2_score(actuals, predictions)
-    global_mae = mean_absolute_error(actuals, predictions)
-    
-    # Etichette e titoli
-    ax.set_xlabel('True AHA Score', fontsize=12, fontweight='bold')
-    ax.set_ylabel('Predicted AHA Score (DAB)', fontsize=12, fontweight='bold')
-    ax.set_title('Daily AHA Biomarker (DAB) Prediction\nST% → AHA Score Linear Regression', 
-                fontsize=14, fontweight='bold', pad=20)
-    
-    # Statistiche nel grafico
-    stats_text = f'Global Metrics:\nr = {global_r:+.4f} (p = {global_p:.4f})\nR² = {global_r2:+.4f}\nMAE = {global_mae:.4f}'
-    ax.text(0.05, 0.95, stats_text, transform=ax.transAxes, fontsize=11,
-            verticalalignment='top', bbox=dict(boxstyle='round', facecolor='lightgray', alpha=0.8))
-    
-    # Personalizzazione
+    macs_array = np.array(macs_values)
+
+    # Plot con colorazione MACS
+    if not all(pd.isnull(macs_array)):
+        for macs_level in sorted(np.unique(macs_array[~pd.isnull(macs_array)])):
+            idx = macs_array == macs_level
+            ax.scatter(np.array(actuals)[idx], np.array(predictions)[idx],
+                       alpha=0.8, s=60, color=palette.get(macs_level, 'gray'),
+                       edgecolors='k', linewidth=0.5, 
+                       label=labels.get(macs_level, f'MACS {macs_level}'))
+    else:
+        # Fallback: scatter unico se MACS non disponibile
+        ax.scatter(actuals, predictions, alpha=0.7, s=60, color='steelblue', 
+                   edgecolors='darkblue', linewidth=0.5, label='Data Points')
+
+    # Etichette
+    ax.set_xlabel('DAB', fontsize=12, fontweight='bold')
+    ax.set_ylabel('AHA', fontsize=12, fontweight='bold')
+    # Limita gli assi come nel grafico allegato
+    ax.set_xlim(40, 100)
+    ax.set_ylim(0, 100)
+
+
+    # Griglia
     ax.grid(True, alpha=0.3)
-    ax.legend(loc='lower right', fontsize=10)
-    ax.set_aspect('equal', adjustable='box')
-    
+
+    # Legenda in alto a sinistra
+    handles, labels_ = ax.get_legend_handles_labels()
+    by_label = dict(zip(labels_, handles))
+    ax.legend(by_label.values(), by_label.keys(), loc='upper left', 
+             fontsize=11, title='MACS Level')
+
     # Salva grafico
     output_path.parent.mkdir(parents=True, exist_ok=True)
     plt.tight_layout()
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    print(f"\nGrafico salvato: {output_path}")
-    
-    plt.show()
+    print(f"\n✅ Grafico salvato: {output_path}")
+    plt.close()
 
 
 def run_regression_analysis(dataset_path: Path, output_dir: Path, k_folds: int = 5) -> None:
@@ -205,47 +220,88 @@ def run_regression_analysis(dataset_path: Path, output_dir: Path, k_folds: int =
     # 1. Caricamento dataset
     data = load_regression_dataset(dataset_path)
     
-    # 2. Preparazione dati
+    # 2. Carica metadata MACS (se disponibile)
+    metadata_path = Path("../dati_uniti/metadata2023_08.xlsx")
+    metadata_df = None
+    
+    if metadata_path.exists():
+        try:
+            metadata_df = pd.read_excel(metadata_path, engine="openpyxl")
+            if 'subject' not in metadata_df.columns or 'MACS' not in metadata_df.columns:
+                print(f"⚠️ Metadata incompleto (manca 'subject' o 'MACS')")
+                metadata_df = None
+            else:
+                print(f"✅ File metadata trovato: {metadata_path}")
+        except Exception as e:
+            print(f"⚠️ Errore caricamento metadata: {e}")
+            metadata_df = None
+    else:
+        print(f"⚠️ File metadata non trovato: {metadata_path}")
+        print(f"   Il plot non avrà colorazione MACS.")
+    
+    # 3. Preparazione dati
     X = data['st_percentage_week'].values  # ST% (Features)
     y = data['true_aha_score'].values      # AHA Score (Target)
+    groups = data['subject_id'].values     # Gruppi per GroupKFold
+    subject_ids = data['subject_id'].values  # ✅ NUOVO: per tracciamento
     
     print(f"\nFeatures: ST% from WEEK data (Daily Activity Biomarker)")
     print(f"Target: True AHA Clinical Score")
     print(f"Samples: {len(X)}")
     
-    # 3. K-fold Cross-Validation
-    correlations, r2_scores, mae_scores, all_predictions, all_actuals, all_test_indices = perform_kfold_regression(
-        X, y, k_folds=k_folds
+    # 4. K-fold Cross-Validation
+    (correlations, r2_scores, mae_scores, slopes, intercepts, 
+     all_predictions, all_actuals, all_subject_ids) = perform_groupkfold_regression(
+        X, y, groups, subject_ids, k_folds=k_folds
     )
     
-    # 4. Statistiche dettagliate
+    # 5. Statistiche dettagliate
     print_statistical_summary(correlations, r2_scores, mae_scores)
     
-    # 5. Visualizzazione
-    create_scatter_plot(all_predictions, all_actuals, output_dir / "regression_scatter_plot.png")
+    # 6. Visualizzazione
+    if metadata_df is not None:
+        create_scatter_plot(all_predictions, all_actuals, all_subject_ids, 
+                          metadata_df, output_dir / "regression_scatter_plot.png")
+    else:
+        # Fallback senza metadata
+        create_scatter_plot(all_predictions, all_actuals, all_subject_ids, 
+                          pd.DataFrame(), output_dir / "regression_scatter_plot.png")
     
-    # 6. Salva risultati numerici
+    # 7. Salva risultati numerici
     results = pd.DataFrame({
         'fold': range(1, k_folds + 1),
         'pearson_r': correlations,
         'r2_score': r2_scores,  
-        'mae': mae_scores
+        'mae': mae_scores,
+        'slope': slopes,
+        'intercept': intercepts
     })
     
     results_path = output_dir / "regression_results.csv"
     results_path.parent.mkdir(parents=True, exist_ok=True)
     results.to_csv(results_path, index=False)
-    print(f"Risultati numerici salvati: {results_path}")
+    print(f"✅ Risultati numerici salvati: {results_path}")
     
-    # 7. Salva predizioni individuali con subject_id
+    avg_slope = np.mean(slopes)
+    avg_intercept = np.mean(intercepts)
+    
+    print("\n" + "="*60)
+    print(" >>> PARAMETRI DA COPIARE PER IL GRAFICO DAB <<< ")
+    print(" (Media dei coefficienti della Cross-Validation) ")
+    print("="*60)
+    print(f"SLOPE (m)     : {avg_slope:.5f}")
+    print(f"INTERCEPT (q) : {avg_intercept:.5f}")
+    print("="*60 + "\n")
+    
+    # 8. Salva predizioni individuali con subject_id
     predictions_df = pd.DataFrame({
-        'subject_id': data.iloc[all_test_indices]['subject_id'].values,
+        'subject_id': all_subject_ids,  # ✅ NUOVO: usa subject_ids tracciati
         'true_aha_score': all_actuals,
         'predicted_aha_score': all_predictions
     })
     
     predictions_path = output_dir / "individual_predictions.csv"
     predictions_df.to_csv(predictions_path, index=False)
-    print(f"Predizioni individuali salvate: {predictions_path}")
+    print(f"✅ Predizioni individuali salvate: {predictions_path}")
     
-    print(f"\n Analisi completata. Output in: {output_dir}")
+    print(f"\n✅ Analisi completata. Output in: {output_dir}")

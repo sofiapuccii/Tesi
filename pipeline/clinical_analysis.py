@@ -2,14 +2,11 @@
 Calcola ST% (Sviluppo Tipico) sui dati WEEK
 usando il modello di classificazione addestrato.
 
-Workflow:
-1. Carica modello di classificazione addestrato
-2. Carica AHA scores clinici dal file Excel metadata
-3. Calcola ST% per ogni soggetto SUI DATI WEEK
-4. Calcola correlazioni ST% vs AHA scores clinici
-5. Salva dataset per regressione (ST% WEEK → AHA score)
-
-Obiettivo: Predire capacità motorie (AHA) da movimenti di vita reale (WEEK)"""
+MODIFICHE:
+- Genera 4 grafici separati: 2 per soggetto SANO + 2 per soggetto PCU
+- Ogni soggetto ha: (1) blocchi disgiunti 6h, (2) finestra scorrevole 6h
+- Stile identico alla collega (griglia y: 0,50,100; x: ogni 00:00)
+"""
 
 from __future__ import annotations
 import json
@@ -21,9 +18,14 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 from scipy.stats import pearsonr
+import matplotlib.pyplot as plt
+import seaborn as sns
+import datetime as dt
+import matplotlib.dates as mdates
 
 # Configurazione TensorFlow
 tf.get_logger().setLevel("ERROR")
+
 
 def load_model_and_metadata(models_dir: Path) -> Tuple[tf.keras.Model, Dict]:
     """Carica modello e metadata."""
@@ -35,28 +37,11 @@ def load_model_and_metadata(models_dir: Path) -> Tuple[tf.keras.Model, Dict]:
     if not meta_path.exists():
         raise FileNotFoundError(f"Metadata non trovato: {meta_path}")
     
-    model = tf.keras.models.load_model(model_path) # carica modello 
+    model = tf.keras.models.load_model(model_path)
     with open(meta_path, "r", encoding="utf-8") as f:
-        metadata = json.load(f) # carica metadata
-    
-    if "feature_stats" not in metadata:
-        raise ValueError("Metadata privo di feature_stats")
+        metadata = json.load(f)
     
     return model, metadata
-
-
-def normalize_with_metadata(X: np.ndarray, feature_stats: Dict) -> np.ndarray:
-    """Normalizza i dati usando le statistiche salvate dal training."""
-    mean = np.array(feature_stats["mean"], dtype=np.float32)
-    std = np.array(feature_stats["std"], dtype=np.float32)
-    
-    if mean.ndim == 1:
-        mean = mean.reshape(1, 1, -1)
-    if std.ndim == 1:
-        std = std.reshape(1, 1, -1)
-    
-    std = np.where(std < 1e-6, 1e-6, std)
-    return (X - mean) / std
 
 
 def load_aha_scores_from_metadata(metadata_path: Path) -> Dict[int, float]:
@@ -88,85 +73,115 @@ def load_data(data_dir: Path) -> Tuple[pd.DataFrame, pd.DataFrame]:
         raise FileNotFoundError(f"Errore caricamento dati WEEK: {e}")
 
 
-def build_subject_windows(subject_id: str, signals_df: pd.DataFrame, windows_df: pd.DataFrame, channels: List[str]) -> np.ndarray:
-    """Costruisce finestre per un soggetto."""
+def build_subject_windows(subject_id: str, signals_df: pd.DataFrame, windows_df: pd.DataFrame, channels: List[str]) -> Tuple[np.ndarray, np.ndarray]:
+    """Costruisce finestre per un soggetto e restituisce anche i TIMESTAMP reali."""
     subject_signals = signals_df[signals_df["subject_id"] == subject_id].reset_index(drop=True)
     subject_windows = windows_df[windows_df["subject_id"] == subject_id]
     
     if len(subject_signals) == 0 or len(subject_windows) == 0:
-        return np.empty((0, 0, len(channels)), dtype=np.float32)
+        return np.empty((0, 0, len(channels)), dtype=np.float32), np.array([])
     
+    time_col = None
+    for col in ['timestamp', 'time', 'datetime', 'Date']:
+        if col in subject_signals.columns:
+            time_col = col
+            break
+            
     X_list = []
+    t_list = []
+    
     for _, row in subject_windows.iterrows():
-        segment = subject_signals.iloc[int(row["start_idx"]):int(row["end_idx"])]
+        start_idx = int(row["start_idx"])
+        end_idx = int(row["end_idx"])
+        
+        segment = subject_signals.iloc[start_idx:end_idx]
         X_list.append(segment[channels].to_numpy(dtype=np.float32))
+        
+        if time_col:
+            t_list.append(subject_signals.iloc[start_idx][time_col])
+        else:
+            t_list.append(start_idx) 
+
+    X_arr = np.stack(X_list, axis=0) if X_list else np.empty((0, 0, len(channels)), dtype=np.float32)
+    t_arr = np.array(t_list)
     
-    return np.stack(X_list, axis=0) if X_list else np.empty((0, 0, len(channels)), dtype=np.float32)
+    return X_arr, t_arr
 
 
-def calculate_st_percentage(model: tf.keras.Model, subject_data: np.ndarray, feature_stats: Dict) -> float:
-    """Calcola percentuale Sviluppo Tipico (ST%) per soggetto."""
+def calculate_st_percentage(model: tf.keras.Model, subject_data: np.ndarray, skip_normalization: bool = True) -> Tuple[float, np.ndarray]:
+    """Calcola percentuale Sviluppo Tipico (ST%) per soggetto e restituisce anche predizioni."""
     if subject_data.shape[0] == 0:
-        return 0.0
+        return 0.0, np.array([])
     
-    # Normalizza i dati
-    X_norm = normalize_with_metadata(subject_data, feature_stats)
+    if skip_normalization:
+        X_norm = subject_data
+    else:
+        mean = np.mean(subject_data, axis=(0, 1), keepdims=True)
+        std = np.std(subject_data, axis=(0, 1), keepdims=True)
+        std = np.where(std < 1e-6, 1e-6, std)
+        X_norm = (subject_data - mean) / std
     
-    # Predizioni del modello
     predictions = model.predict(X_norm, verbose=0)
+    #===================================================================================================================================================
+    #PARTE NUOVA
+    #class_predictions = (predictions.flatten() >= 0.40).astype(int)
+    #Estare la probabilità di malattia (PCU)
+    if predictions.shape[1]==1:
+        prob_pcu = predictions.flatten()
+    else:
+        prob_pcu = predictions[:,1]
+    #calcola la probabilità di sanità (ST)
+    prob_st= 1.0 - prob_pcu
+    #si fa la media delle probabilità (invece di contare gli 0)
+    st_percentage = np.mean(prob_st) * 100
+    #st_count = np.sum(class_predictions == 0)
+    #total_windows = len(class_predictions)
+    #st_percentage = (st_count / total_windows) * 100
     
-    # Converti probabilità in classi (threshold 0.5)
-    if predictions.shape[1] == 1:  # output sigmoid
-        class_predictions = (predictions.flatten() < 0.5).astype(int)  # 0=ST, 1=PCU
-    else:  # output softmax
-        class_predictions = np.argmax(predictions, axis=1)
-    
-    # Calcola percentuale ST (classe 0)
-    st_count = np.sum(class_predictions == 0)
-    total_windows = len(class_predictions)
-    st_percentage = (st_count / total_windows) * 100
-    
-    return float(st_percentage)
+    return float(st_percentage), predictions
 
 
 def calculate_week_st_percentages(model: tf.keras.Model, week_signals_df: pd.DataFrame, week_windows_df: pd.DataFrame, 
-                                 aha_scores: Dict[int, float], feature_stats: Dict, channels: List[str]) -> Dict[int, float]:
-    """Calcola ST% per tutti i soggetti sui dati WEEK."""
+                                 aha_scores: Dict[int, float], channels: List[str]) -> Tuple[Dict, Dict, Dict]:
+    """Calcola ST% e raccoglie dati temporali."""
     print(f"\n=== CALCOLO ST% SU DATI WEEK (VITA REALE) ===")
     
     st_percentages = {}
+    all_predictions = {}
+    all_timestamps = {}
+    
     unique_subjects = week_signals_df["subject_id"].unique()
     
     for subject_id in unique_subjects:
         match = re.search(r"subject_(\d+)", str(subject_id))
-        if not match:
-            continue
+        if not match: continue
         subject_num = int(match.group(1))
-        if subject_num not in aha_scores:
-            continue
+        if subject_num not in aha_scores: continue
         
-        subject_data = build_subject_windows(subject_id, week_signals_df, week_windows_df, channels)
-        if subject_data.shape[0] == 0:
-            continue
+        subject_data, t_subject = build_subject_windows(subject_id, week_signals_df, week_windows_df, channels)
         
-        st_percentage = calculate_st_percentage(model, subject_data, feature_stats)
+        if subject_data.shape[0] == 0: continue
+        
+        st_percentage, predictions = calculate_st_percentage(model, subject_data, skip_normalization=True)
+        
         st_percentages[subject_num] = st_percentage
+        all_predictions[subject_num] = predictions
+        all_timestamps[subject_num] = t_subject
         
-        print(f"Soggetto {subject_num}: ST%={st_percentage:.1f}%, AHA_target={aha_scores[subject_num]}")
+        print(f"Soggetto {subject_num}: ST%={st_percentage:.1f}%, AHA={aha_scores[subject_num]}")
     
     if len(st_percentages) >= 2:
         subjects = list(st_percentages.keys())
         st_values = [st_percentages[s] for s in subjects]
         aha_values = [aha_scores[s] for s in subjects]
         correlation, p_value = pearsonr(st_values, aha_values)
-        print(f" Correlazione ST% vs AHA: {correlation:.4f} (p={p_value:.4f})")
+        print(f"\n Correlazione ST% vs AHA: {correlation:.4f} (p={p_value:.4f})")
     
-    return st_percentages
-
+    return st_percentages, all_predictions, all_timestamps
 
 def save_regression_dataset_week_only(st_percentages_week: Dict[int, float], 
                                      aha_scores: Dict[int, float], output_path: Path) -> None:
-    """Salva dataset per regressione usando solo ST% calcolati sui dati WEEK."""
+    """Mantieni identica"""
     common_subjects = set(st_percentages_week.keys()) & set(aha_scores.keys())
     
     data = [{
@@ -177,30 +192,61 @@ def save_regression_dataset_week_only(st_percentages_week: Dict[int, float],
     
     output_path.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(data).to_csv(output_path, index=False)
-    print(f"   Dataset regressione salvato: {len(data)} soggetti")
-    print(f"   Features: ST% da dati WEEK")
-    print(f"   Target: AHA score clinico")
+    print(f"    Dataset regressione salvato: {len(data)} soggetti")
+
+
+def save_temporal_predictions(all_predictions: Dict, all_timestamps: Dict, aha_scores: Dict, output_path: Path):
+    """Mantieni identica"""
+    rows = []
+    
+    for subject_id, preds in all_predictions.items():
+        if subject_id not in all_timestamps: continue
+        
+        timestamps = all_timestamps[subject_id]
+        true_aha = aha_scores.get(subject_id, np.nan)
+        
+        if preds.shape[1] == 1:
+            is_st = (preds.flatten() < 0.40).astype(int)
+        else:
+            is_st = (np.argmax(preds, axis=1) == 0).astype(int)
+            
+        limit = min(len(timestamps), len(is_st))
+        
+        for i in range(limit):
+            rows.append({
+                'subject_id': subject_id,
+                'timestamp': timestamps[i],
+                'is_st': is_st[i],
+                'true_aha_score': true_aha
+            })
+            
+    df = pd.DataFrame(rows)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(output_path, index=False)
+    print(f"    Dataset temporale salvato: {output_path} ({len(df)} righe)")
+
 
 
 def run_clinical_analysis(models_dir: Path, data_dir: Path, metadata_path: Path, output_dir: Path) -> None:
-    """Esegue l'analisi clinica completa."""
+    """Esegue l'analisi clinica completa con 4 grafici separati."""
     
-    # Carica modello e metadata
     model, metadata = load_model_and_metadata(models_dir)
-    feature_stats = metadata["feature_stats"]
-    channels = feature_stats["channels"]
+    channels = metadata["feature_stats"]["channels"]
     
-    # Carica AHA scores dal file Excel originale
     aha_scores = load_aha_scores_from_metadata(metadata_path)
     
-    # Carica dati WEEK e calcola ST%
+    print("Caricando dati WEEK per analisi clinica...")
     week_signals, week_windows = load_data(data_dir)
-    st_percentages_week = calculate_week_st_percentages(
-        model, week_signals, week_windows, aha_scores, feature_stats, channels
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    st_percentages_week, all_predictions, all_timestamps = calculate_week_st_percentages(
+        model, week_signals, week_windows, aha_scores, channels
     )
     
-    # Salva dataset regressione (solo ST% WEEK)
+    # Salva dataset per regressione (invariati)
     save_regression_dataset_week_only(st_percentages_week, aha_scores, 
                                     output_dir / "regression_dataset.csv")
+    save_temporal_predictions(all_predictions, all_timestamps, aha_scores, 
+                              output_dir / "temporal_predictions.csv")
     
     print(f"\n Completato. Risultati in: {output_dir}")
