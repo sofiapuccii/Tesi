@@ -1,11 +1,6 @@
 """
 Calcola ST% (Sviluppo Tipico) sui dati WEEK
 usando il modello di classificazione addestrato.
-
-MODIFICHE:
-- Genera 4 grafici separati: 2 per soggetto SANO + 2 per soggetto PCU
-- Ogni soggetto ha: (1) blocchi disgiunti 6h, (2) finestra scorrevole 6h
-- Stile identico alla collega (griglia y: 0,50,100; x: ogni 00:00)
 """
 
 from __future__ import annotations

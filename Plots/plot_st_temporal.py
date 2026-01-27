@@ -9,14 +9,13 @@ import datetime
 def plot_st_prob_blocks(timestamps, is_st_data, significativity_threshold, output_path, subject):
     """Plot ST% con blocchi fissi di 6 ore allineati all'orologio (00-06, 06-12, 12-18, 18-24)."""
     
-    # Converti timestamps in datetime se necessario - con gestione sicura
     if isinstance(timestamps, pd.Series):
-        # Reset index per evitare problemi con indici non standard
+        
         timestamps = timestamps.reset_index(drop=True)
-        # Controlla se è già datetime
+        
         if not pd.api.types.is_datetime64_any_dtype(timestamps):
             try:
-                # Se sembrano timestamp Unix (numeri grandi), convertili
+               
                 if timestamps.dtype in ['float64', 'int64'] and timestamps.iloc[0] > 1e9:
                     print(f"Rilevati timestamp Unix, conversione...")
                     timestamps = pd.to_datetime(timestamps, unit='s')
@@ -29,9 +28,9 @@ def plot_st_prob_blocks(timestamps, is_st_data, significativity_threshold, outpu
                 timestamps = pd.date_range(start=start_time, periods=len(timestamps), freq='240S')
                 print(f"Usato timestamp sintetico: {start_time} + intervalli 240s")
     else:
-        # È un array numpy - gestisci timestamp Unix
+       
         try:
-            if timestamps[0] > 1e9:  # Probabilmente Unix timestamp
+            if timestamps[0] > 1e9: 
                 timestamps = pd.to_datetime(timestamps, unit='s')
             else:
                 timestamps = pd.to_datetime(timestamps)
@@ -58,7 +57,7 @@ def plot_st_prob_blocks(timestamps, is_st_data, significativity_threshold, outpu
         (0, 6),   # 00:00 - 06:00
         (6, 12),  # 06:00 - 12:00  
         (12, 18), # 12:00 - 18:00
-        (18, 0)   # 18:00 - 00:00 (del giorno successivo)
+        (18, 0)   # 18:00 - 00:00 
     ]
     
     last_timestamp = df['timestamp'].max()
@@ -78,7 +77,7 @@ def plot_st_prob_blocks(timestamps, is_st_data, significativity_threshold, outpu
                 # Blocco normale nello stesso giorno
                 block_end = pd.Timestamp.combine(date, datetime.time(end_hour, 0))
             
-            # Stop intelligente: se il blocco inizia dopo l'ultimo timestamp, fermati
+            # se il blocco inizia dopo l'ultimo timestamp, fermati
             if block_start > last_timestamp:
                 break
                 
@@ -94,9 +93,9 @@ def plot_st_prob_blocks(timestamps, is_st_data, significativity_threshold, outpu
                 n_st = block_data.sum()  # Conta gli 1 (ST)
                 n_total = len(block_data)
                 
-                # Controllo significatività (opzionale)
+                # Controllo significatività 
                 if n_total < (len(df) * significativity_threshold / 100 / (len(unique_dates) * 4)):
-                    st_percentage = np.nan  # Non significativo
+                    st_percentage = np.nan  
                 else:
                     st_percentage = (n_st / n_total) * 100
             
@@ -144,7 +143,7 @@ def plot_st_prob_blocks(timestamps, is_st_data, significativity_threshold, outpu
     print(f"Grafico ST blocchi fissi salvato: {output_path}")
     plt.close()
 
-# === Funzione per plot smooth (finestra scorrevole) ===
+# === Funzione per plot smooth (finestra scorrevole) === DA SISTEMARE
 def plot_st_prob_smooth(timestamps, prob_st, windows_per_block, output_path):
     smooth_st_means = []
     smooth_timestamps = []
@@ -168,7 +167,7 @@ def plot_st_prob_smooth(timestamps, prob_st, windows_per_block, output_path):
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
 
-# === Esempio di utilizzo ===
+
 if __name__ == "__main__":
     # Carica il file CSV esportato da clinical_analysis.py
     df = pd.read_csv("../results/clinical_analysis_v2/temporal_predictions.csv")
@@ -182,7 +181,7 @@ if __name__ == "__main__":
     print(f"Dati grezzi trovati: {len(subject_df)} righe")
     print(f"Sample timestamp grezzo: {subject_df['timestamp'].iloc[0]}")
     
-    # Converti timestamps - con debug
+    # Converti timestamps 
     try:
         # Controlla se è un timestamp Unix (numero > 1e9)
         sample_timestamp = subject_df['timestamp'].iloc[0]
@@ -206,7 +205,7 @@ if __name__ == "__main__":
         raise ValueError("Il file deve contenere la colonna is_st!")
     
     # Parametri
-    significativity_threshold = 75  # Soglia di significatività (opzionale per blocchi fissi)
+    significativity_threshold = 75  # Soglia di significatività
     
     print(f"Elaborando soggetto {subject_id}: {len(timestamps)} finestre temporali")
     print(f"Periodo: {timestamps.min()} → {timestamps.max()}")
@@ -217,8 +216,8 @@ if __name__ == "__main__":
                        Path(f"st_blocks_fixed_subject{subject_id}.png"), 
                        subject=subject_id)
     
-    # Grafico smooth (opzionale - mantiene la logica originale)
-    windows_per_block = 90  # es: 6h se ogni finestra è 4 minuti
+    # Grafico smooth 
+    windows_per_block = 90  #  6h se ogni finestra è 4 minuti
     plot_st_prob_smooth(timestamps, is_st_data, windows_per_block, 
                        Path(f"st_smooth_subject{subject_id}.png"))
     

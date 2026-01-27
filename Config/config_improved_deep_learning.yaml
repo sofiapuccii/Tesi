@@ -33,7 +33,7 @@ models:
   - "cnn_1d"  
   - "lstm"    
 
-# Random search approfondita per dataset grandi
+# Random search 
 random_search:
   n_trials: 50  # Aumentato per migliore esplorazione
   n_jobs: 8  # Aumentato per parallelizzare più trial 
@@ -55,7 +55,7 @@ param_space:
   # CNN 1D specifici
   kernel_size:
     type: "choice"
-    values: [3, 5, 7, 9]  # Assicurati che siano <= window_size
+    values: [3, 5, 7, 9]  
   n_filters:
     type: "choice"
     values: [32, 64, 96, 128]
@@ -80,9 +80,3 @@ primary_metric: "f1_score"
 # Output e salvataggio
 save_models: true
 save_detailed_results: true
-
-# Confronto 
-comparison:
-  enable_statistical_tests: true  # Test statistici sui risultati CV
-  generate_rankings: true         # Classifica modelli 
-  export_summary_table: true      # Tabella riassuntiva finale

@@ -4,7 +4,6 @@ Analisi di Regressione Lineare per predire AHA Score da ST% (Daily AHA Biomarker
 Input: regression_dataset.csv con colonne [subject_id, st_percentage_week, true_aha_score]
 Output: Analisi completa con K-fold Cross-Validation, metriche dettagliate e visualizzazioni.
 
-FIXED: Risolto bug "positional indexers are out-of-bounds"
 """
 
 from __future__ import annotations
@@ -48,21 +47,7 @@ def load_regression_dataset(dataset_path: Path) -> pd.DataFrame:
 
 def perform_groupkfold_regression(X: np.ndarray, y: np.ndarray, groups: np.ndarray, 
                                   subject_ids: np.ndarray, k_folds: int = 5) -> Tuple:
-    """
-    Esegue GroupKFold Cross-Validation per regressione lineare, raggruppando per soggetto.
     
-    FIXED: Ora traccia subject_id invece di indici posizionali
-    
-    Returns:
-        correlations: Lista coefficienti di correlazione di Pearson per ogni fold
-        r2_scores: Lista R² per ogni fold  
-        mae_scores: Lista MAE per ogni fold
-        slopes: Lista slope per ogni fold
-        intercepts: Lista intercept per ogni fold
-        all_predictions: Lista predizioni per ogni fold
-        all_actuals: Lista valori reali per ogni fold
-        all_subject_ids: Lista subject_id per ogni predizione
-    """
     from sklearn.model_selection import GroupKFold
     group_kfold = GroupKFold(n_splits=k_folds)
 
@@ -73,8 +58,7 @@ def perform_groupkfold_regression(X: np.ndarray, y: np.ndarray, groups: np.ndarr
     intercepts = []
     all_predictions = []
     all_actuals = []
-    all_subject_ids = []  # ✅ NUOVO: traccia subject_id invece di indici
-
+    all_subject_ids = [] 
     print(f"\n=== GROUP K-FOLD CROSS-VALIDATION (k={k_folds}) ===")
 
     for fold_idx, (train_idx, test_idx) in enumerate(group_kfold.split(X, y, groups), 1):
@@ -106,7 +90,7 @@ def perform_groupkfold_regression(X: np.ndarray, y: np.ndarray, groups: np.ndarr
         # Salva predizioni + metadata
         all_predictions.extend(y_pred)
         all_actuals.extend(y_test)
-        all_subject_ids.extend(test_subject_ids)  # ✅ NUOVO: traccia subject_id
+        all_subject_ids.extend(test_subject_ids)  
         
         print(f"Fold {fold_idx:2d}: r={correlation:+.4f} (p={p_value:.4f}), "
               f"R²={r2:+.4f}, MAE={mae:.4f}, "
@@ -153,7 +137,6 @@ def create_scatter_plot(predictions: List[float], actuals: List[float],
     """
     Crea scatter plot Predicted vs Actual con colorazione MACS.
     
-    FIXED: Usa subject_ids per fare il match con metadata
     """
     
     fig, ax = plt.subplots(figsize=(10, 8))
@@ -162,7 +145,7 @@ def create_scatter_plot(predictions: List[float], actuals: List[float],
     palette = {0: 'forestgreen', 1: 'gold', 2: 'orange', 3: 'red'}
     labels = {0: 'MACS 0', 1: 'MACS 1', 2: 'MACS 2', 3: 'MACS 3'}
 
-    # ✅ NUOVO: Match subject_id con MACS usando DataFrame
+    
     macs_values = []
     for sid in subject_ids:
         # Cerca MACS per questo subject_id
@@ -208,7 +191,7 @@ def create_scatter_plot(predictions: List[float], actuals: List[float],
     output_path.parent.mkdir(parents=True, exist_ok=True)
     plt.tight_layout()
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    print(f"\n✅ Grafico salvato: {output_path}")
+    print(f"\n Grafico salvato: {output_path}")
     plt.close()
 
 
@@ -228,22 +211,22 @@ def run_regression_analysis(dataset_path: Path, output_dir: Path, k_folds: int =
         try:
             metadata_df = pd.read_excel(metadata_path, engine="openpyxl")
             if 'subject' not in metadata_df.columns or 'MACS' not in metadata_df.columns:
-                print(f"⚠️ Metadata incompleto (manca 'subject' o 'MACS')")
+                print(f" Metadata incompleto (manca 'subject' o 'MACS')")
                 metadata_df = None
             else:
-                print(f"✅ File metadata trovato: {metadata_path}")
+                print(f" File metadata trovato: {metadata_path}")
         except Exception as e:
-            print(f"⚠️ Errore caricamento metadata: {e}")
+            print(f" Errore caricamento metadata: {e}")
             metadata_df = None
     else:
-        print(f"⚠️ File metadata non trovato: {metadata_path}")
+        print(f" File metadata non trovato: {metadata_path}")
         print(f"   Il plot non avrà colorazione MACS.")
     
     # 3. Preparazione dati
     X = data['st_percentage_week'].values  # ST% (Features)
     y = data['true_aha_score'].values      # AHA Score (Target)
     groups = data['subject_id'].values     # Gruppi per GroupKFold
-    subject_ids = data['subject_id'].values  # ✅ NUOVO: per tracciamento
+    subject_ids = data['subject_id'].values  
     
     print(f"\nFeatures: ST% from WEEK data (Daily Activity Biomarker)")
     print(f"Target: True AHA Clinical Score")
@@ -280,7 +263,7 @@ def run_regression_analysis(dataset_path: Path, output_dir: Path, k_folds: int =
     results_path = output_dir / "regression_results.csv"
     results_path.parent.mkdir(parents=True, exist_ok=True)
     results.to_csv(results_path, index=False)
-    print(f"✅ Risultati numerici salvati: {results_path}")
+    print(f" Risultati numerici salvati: {results_path}")
     
     avg_slope = np.mean(slopes)
     avg_intercept = np.mean(intercepts)
@@ -295,13 +278,13 @@ def run_regression_analysis(dataset_path: Path, output_dir: Path, k_folds: int =
     
     # 8. Salva predizioni individuali con subject_id
     predictions_df = pd.DataFrame({
-        'subject_id': all_subject_ids,  # ✅ NUOVO: usa subject_ids tracciati
+        'subject_id': all_subject_ids,  
         'true_aha_score': all_actuals,
         'predicted_aha_score': all_predictions
     })
     
     predictions_path = output_dir / "individual_predictions.csv"
     predictions_df.to_csv(predictions_path, index=False)
-    print(f"✅ Predizioni individuali salvate: {predictions_path}")
+    print(f" Predizioni individuali salvate: {predictions_path}")
     
-    print(f"\n✅ Analisi completata. Output in: {output_dir}")
+    print(f"\n Analisi completata. Output in: {output_dir}")

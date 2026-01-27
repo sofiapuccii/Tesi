@@ -293,9 +293,9 @@ def window_segments(df: pd.DataFrame, window_size: int, overlap: float) -> pd.Da
             if "label" in seg.columns:
                 label_mode = seg["label"].mode() 
                 window_row["label"] = label_mode.iloc[0] if len(label_mode) > 0 else seg["label"].iloc[0] # assegna la label più frequente
-            # Add AHA score if present (copied per subject)
+            
             if "AHA" in seg.columns:
-                window_row["AHA"] = seg["AHA"].iloc[0]  # AHA score is constant per subject
+                window_row["AHA"] = seg["AHA"].iloc[0]  
             rows.append(window_row)
             s += step if step > 0 else window_size
 
@@ -311,7 +311,7 @@ def save_preprocessed(df: pd.DataFrame, windows: pd.DataFrame, out_dir: Path) ->
     # Salva i dati in Parquet (più veloce di CSV)
     try:
         import pyarrow
-        # Salva i dati in Parquet (persistent storage)
+        
         df.to_parquet(out_dir / "signals.parquet", index=False, engine='pyarrow', compression='snappy')
         windows.to_parquet(out_dir / "windows.parquet", index=False, engine='pyarrow', compression='snappy')
     except ImportError:

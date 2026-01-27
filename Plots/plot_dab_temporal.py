@@ -2,7 +2,7 @@
 Visualizzazione temporale del Daily AHA Biomarker (DAB) con Smoothing.
 
 Workflow:
-1. Carica i dati grezzi (is_st: 0/1) generati da clinical_analysis.py
+1. Carica i dati generati da clinical_analysis.py
 2. Applica una media mobile (Rolling Window 6h) per ottenere l'ST% locale
 3. Applica la formula di regressione (Slope/Intercept) per stimare il DAB
 4. Plotta il risultato confrontandolo con l'AHA Reale.
@@ -56,8 +56,8 @@ def process_subject_dab(subject_df: pd.DataFrame, slope: float, intercept: float
     # Ordina per tempo e imposta indice per il rolling
     df = subject_df.sort_values('timestamp').set_index('timestamp')
     
-    # 1. Calcolo ST% Locale (Rolling Mean)
-    # Calcola la media di 'is_st' (0 o 1) nella finestra temporale
+    # 1. Calcolo ST% Locale 
+    # Calcola la media nella finestra temporale
     # Moltiplichiamo per 100 per avere la percentuale (0-100)
     # min_periods=10: serve almeno qualche dato per disegnare la linea
     df['rolling_st_percent'] = df['is_st'].rolling(window, min_periods=10).mean() * 100
@@ -97,8 +97,7 @@ def plot_dab_temporal(processed_df: pd.DataFrame, subject_id: str,
     ax.set_xlabel('Orario', fontsize=12)
     ax.set_ylim(0, 105) # Un po' di margine sopra il 100
     
-    # Formattazione Asse X per replicare il formato della figura 4.7
-    if days_span > 3:  # Se abbiamo più di 3 giorni (settimana), usa formato con orari ripetuti
+    if days_span > 3:  
         # Major ticks ogni giorno alle 00:00
         ax.xaxis.set_major_locator(mdates.DayLocator())
         ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))  # Mostra solo l'orario (00:00)

@@ -343,7 +343,7 @@ def preprocess_week_signals(data_dir: Path, output_dir: Path, window_size: int, 
     
     print("Preprocessing WEEK signals (ecological data)...")
     
-    # Load WEEK data separately (only WEEK files)
+    # Load WEEK data (only WEEK files)
     _, week_data = load_csv_folder_multiprocess(data_dir, metadata_file, n_workers, load_only='WEEK')
     
     if week_data.empty:
