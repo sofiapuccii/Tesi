@@ -122,7 +122,7 @@ def calculate_st_percentage(model: tf.keras.Model, subject_data: np.ndarray, ski
     #class_predictions = (predictions.flatten() >= 0.40).astype(int)
     #Estare la probabilità di malattia (PCU)
     if predictions.shape[1]==1:
-        prob_pcu = predictions.flatten()
+        prob_pcu = predictions.flatten() #estrae la probabilità di malattia, perchè nei miei classificatori uso Dense(1,activation='sigmoid') quindi il valore restituito è la probabilità di malattia avendo assegnato 1 alla classe PCU e 0 alla classe ST
     else:
         prob_pcu = predictions[:,1]
     #calcola la probabilità di sanità (ST)

@@ -143,35 +143,41 @@ def plot_st_prob_blocks(timestamps, is_st_data, significativity_threshold, outpu
     print(f"Grafico ST blocchi fissi salvato: {output_path}")
     plt.close()
 
-# === Funzione per plot smooth (finestra scorrevole) === DA SISTEMARE
-def plot_st_prob_smooth(timestamps, prob_st, windows_per_block, output_path):
-    smooth_st_means = []
-    smooth_timestamps = []
-    for i in range(len(prob_st) - windows_per_block + 1):
-        block_data = prob_st[i:i+windows_per_block]
-        st_mean = np.mean(block_data) * 100
-        smooth_st_means.append(st_mean)
-        smooth_timestamps.append(timestamps[i + windows_per_block//2])
-    fig, ax = plt.subplots(figsize=(10, 4))
-    ax.plot(smooth_timestamps, smooth_st_means, linewidth=2, color='steelblue')
+# === Funzione per plot smooth (finestra scorrevole) ===
+def plot_st_prob_smooth(timestamps, is_st_data , window_hours, output_path):
+  # Crea DataFrame con timestamp come indice
+    df = pd.DataFrame({'is_st': is_st_data}, index=pd.to_datetime(timestamps))
+    df = df.sort_index()
+
+    # Calcola la percentuale di ST su una finestra mobile di 6 ore
+    rolling = df['is_st'].rolling(f'{window_hours}H', min_periods=1).mean() * 100
+
+    # Plot
+    fig, ax = plt.subplots(figsize=(12, 3))
+    ax.plot(rolling.index, rolling.values, color='steelblue', linewidth=2.5)
+
     ax.set_ylim([0, 100])
     ax.set_yticks([0, 50, 100])
-    ax.set_ylabel('% sample ST (media probabilità)')
-    ax.set_xlabel('Orario')
-    ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
-    ax.xaxis.set_major_locator(mdates.DayLocator())
-    ax.xaxis.set_minor_locator(mdates.HourLocator(interval=6))
-    ax.grid(True, which='major', alpha=0.5, linestyle='-', linewidth=0.8)
-    ax.grid(True, which='minor', alpha=0.3, linestyle='-', linewidth=0.5)
+    ax.grid(True, alpha=0.3)
+
+    # Formattazione asse X come in plot_st_prob_blocks
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%d/%m\n%H:%M'))
+    ax.xaxis.set_major_locator(mdates.HourLocator(interval=6))
+    ax.xaxis.set_minor_locator(mdates.HourLocator(interval=3))
+
+    ax.set_xlabel("Orario", fontsize=12, fontweight='bold')
+    ax.set_ylabel("% sample ST", fontsize=12, fontweight='bold')
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     plt.tight_layout()
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    print(f"Grafico ST smooth (rolling) salvato: {output_path}")
     plt.close()
-
 
 if __name__ == "__main__":
     # Carica il file CSV esportato da clinical_analysis.py
     df = pd.read_csv("../results/clinical_analysis_v2/temporal_predictions.csv")
-    subject_id = 42  # Cambia con il soggetto che vuoi plottare
+    subject_id = 11  # Cambia con il soggetto che vuoi plottare
     subject_df = df[df['subject_id'] == subject_id].copy()
     
     if len(subject_df) == 0:
@@ -218,7 +224,6 @@ if __name__ == "__main__":
     
     # Grafico smooth 
     windows_per_block = 90  #  6h se ogni finestra è 4 minuti
-    plot_st_prob_smooth(timestamps, is_st_data, windows_per_block, 
-                       Path(f"st_smooth_subject{subject_id}.png"))
+    plot_st_prob_smooth(timestamps, is_st_data, window_hours=6, output_path= Path(f"st_smooth_subject{subject_id}.png"))
     
     print(f"Grafici generati per soggetto {subject_id}")
