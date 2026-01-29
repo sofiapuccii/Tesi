@@ -128,8 +128,7 @@ def plot_st_prob_blocks(timestamps, is_st_data, significativity_threshold, outpu
     
     # Formattazione asse X
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%d/%m\n%H:%M'))
-    ax.xaxis.set_major_locator(mdates.HourLocator(interval=6))
-    ax.xaxis.set_minor_locator(mdates.HourLocator(interval=3))
+    ax.xaxis.set_major_locator(mdates.DayLocator())  # Tick a mezzanotte ogni giorno
     
     # Labels e titolo
     ax.set_xlabel("Orario", fontsize=12, fontweight='bold')
@@ -158,12 +157,11 @@ def plot_st_prob_smooth(timestamps, is_st_data , window_hours, output_path):
 
     ax.set_ylim([0, 100])
     ax.set_yticks([0, 50, 100])
-    ax.grid(True, alpha=0.3)
+    ax.grid(True, alpha=0.3) 
 
     # Formattazione asse X come in plot_st_prob_blocks
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%d/%m\n%H:%M'))
-    ax.xaxis.set_major_locator(mdates.HourLocator(interval=6))
-    ax.xaxis.set_minor_locator(mdates.HourLocator(interval=3))
+    ax.xaxis.set_major_locator(mdates.DayLocator())  # Tick a mezzanotte ogni giorno
 
     ax.set_xlabel("Orario", fontsize=12, fontweight='bold')
     ax.set_ylabel("% sample ST", fontsize=12, fontweight='bold')
@@ -174,12 +172,81 @@ def plot_st_prob_smooth(timestamps, is_st_data , window_hours, output_path):
     print(f"Grafico ST smooth (rolling) salvato: {output_path}")
     plt.close()
 
+
+def plot_dab_smooth_from_binary(timestamps, is_st_binary, true_aha, regressor, output_path, subject_id, window_hours=6):
+    
+    # 1. Preparazione DataFrame
+    df = pd.DataFrame({
+        'is_st': is_st_binary
+    }, index=pd.to_datetime(timestamps))
+    
+    df = df.sort_index()
+  
+    df['st_rolling_percent'] = df['is_st'].rolling(window=f'{window_hours}H', min_periods=10).mean() * 100
+    
+    # 3. Applicazione del Regressore
+    # DAB = (ST% * slope) + intercept
+    
+    # Gestione input regressore (Tupla manuale o Oggetto Sklearn)
+    if isinstance(regressor, (list, tuple, np.ndarray)):
+        slope, intercept = regressor
+        df['dab_predicted'] = (df['st_rolling_percent'] * slope) + intercept
+    elif hasattr(regressor, 'predict'):
+        # Logica per oggetto sklearn
+        valid_mask = ~df['st_rolling_percent'].isna()
+        predictions = np.full(len(df), np.nan)
+        if valid_mask.sum() > 0:
+            X = df.loc[valid_mask, 'st_rolling_percent'].values.reshape(-1, 1)
+            predictions[valid_mask] = regressor.predict(X).flatten()
+        df['dab_predicted'] = predictions
+    else:
+        # Fallback se passi solo numeri sfusi non in tupla
+        raise ValueError("Il regressore deve essere una tupla (slope, intercept) o un oggetto sklearn")
+
+    # 4. Clipping (0-100)
+    df['dab_clipped'] = df['dab_predicted'].clip(0, 100)
+    
+    # 5. Plotting
+    fig, ax = plt.subplots(figsize=(14, 5))
+    
+    # Linea DAB (Verde continua)
+    ax.plot(df.index, df['dab_clipped'], 
+            color='forestgreen', linewidth=2.5)
+    
+    # Linea Ground Truth
+    ax.axhline(y=true_aha, color='royalblue', linestyle='--', 
+               linewidth=2, label=f'True AHA Score)')
+    
+    # Estetica
+    ax.set_ylim(-5, 105)
+    ax.set_yticks([0, 50, 100])
+    ax.set_ylabel('DAB', fontweight='bold')
+    ax.set_xlabel('Orario', fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    
+    # Formattazione Date
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M')) # Solo orario
+    ax.xaxis.set_major_locator(mdates.DayLocator())  # Tick a mezzanotte ogni giorno
+    
+    ax.legend(loc='upper right', frameon=True)
+    #plt.title(f'Subject {subject_id} - Temporal Home-AHA (From Binary Labels)', pad=15)
+    
+    # Salvataggio
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    print(f"Grafico salvato: {output_path}")
+    plt.close()
+
 if __name__ == "__main__":
     # Carica il file CSV esportato da clinical_analysis.py
     df = pd.read_csv("../results/clinical_analysis_v2/temporal_predictions.csv")
     subject_id = 11  # Cambia con il soggetto che vuoi plottare
     subject_df = df[df['subject_id'] == subject_id].copy()
-    
+    regressor_params = (4.53327, 37.51612)  # Esempio: slope=0.5, intercept=10
+
+
     if len(subject_df) == 0:
         print(f"Errore: Nessun dato trovato per soggetto {subject_id}")
         exit(1)
@@ -225,5 +292,6 @@ if __name__ == "__main__":
     # Grafico smooth 
     windows_per_block = 90  #  6h se ogni finestra è 4 minuti
     plot_st_prob_smooth(timestamps, is_st_data, window_hours=6, output_path= Path(f"st_smooth_subject{subject_id}.png"))
+    plot_dab_smooth_from_binary(timestamps= timestamps, is_st_binary= is_st_data, true_aha= subject_df['true_aha_score'].iloc[0], regressor= regressor_params, output_path= Path(f"dab_smooth_from_binary_subject{subject_id}.png"), subject_id= subject_id)
     
     print(f"Grafici generati per soggetto {subject_id}")

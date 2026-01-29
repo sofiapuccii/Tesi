@@ -1,11 +1,3 @@
-"""
-Analisi di Regressione Lineare per predire AHA Score da ST% (Daily AHA Biomarker).
-
-Input: regression_dataset.csv con colonne [subject_id, st_percentage_week, true_aha_score]
-Output: Analisi completa con K-fold Cross-Validation, metriche dettagliate e visualizzazioni.
-
-"""
-
 from __future__ import annotations
 from pathlib import Path
 from typing import List, Tuple
@@ -17,6 +9,7 @@ import seaborn as sns
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, r2_score
 from scipy.stats import pearsonr
+import joblib
 
 # Stile dei grafici
 plt.style.use('default')
@@ -161,21 +154,21 @@ def create_scatter_plot(predictions: List[float], actuals: List[float],
     if not all(pd.isnull(macs_array)):
         for macs_level in sorted(np.unique(macs_array[~pd.isnull(macs_array)])):
             idx = macs_array == macs_level
-            ax.scatter(np.array(actuals)[idx], np.array(predictions)[idx],
+            ax.scatter(np.array(predictions)[idx], np.array(actuals)[idx],
                        alpha=0.8, s=60, color=palette.get(macs_level, 'gray'),
                        edgecolors='k', linewidth=0.5, 
                        label=labels.get(macs_level, f'MACS {macs_level}'))
     else:
         # Fallback: scatter unico se MACS non disponibile
-        ax.scatter(actuals, predictions, alpha=0.7, s=60, color='steelblue', 
+        ax.scatter(predictions, actuals, alpha=0.7, s=60, color='steelblue', 
                    edgecolors='darkblue', linewidth=0.5, label='Data Points')
 
     # Etichette
     ax.set_xlabel('DAB', fontsize=12, fontweight='bold')
     ax.set_ylabel('AHA', fontsize=12, fontweight='bold')
     # Limita gli assi come nel grafico allegato
-    ax.set_xlim(40, 100)
-    ax.set_ylim(0, 100)
+    ax.set_xlim(35, 102)  # Aggiungi margine superiore anche all'asse X
+    ax.set_ylim(0, 102)  # Aggiungi margine superiore per non tagliare i punti a 100
 
 
     # Griglia
@@ -286,5 +279,12 @@ def run_regression_analysis(dataset_path: Path, output_dir: Path, k_folds: int =
     predictions_path = output_dir / "individual_predictions.csv"
     predictions_df.to_csv(predictions_path, index=False)
     print(f" Predizioni individuali salvate: {predictions_path}")
+    
+    # Salva il modello addestrato sull'intero dataset per uso futuro
+    final_regressor = LinearRegression()
+    final_regressor.fit(X.reshape(-1, 1), y)
+    regressor_path = output_dir / "regressor_dab.pkl"
+    joblib.dump(final_regressor, regressor_path)
+    print(f"\n Regressore salvato in: {regressor_path}\n")
     
     print(f"\n Analisi completata. Output in: {output_dir}")
